@@ -34,6 +34,12 @@ jobs:
     # ---------------------------------------------------------------
     runs-on: windows-latest
 
+    # Declare the pub cache path as an explicit env var so the linter
+    # can resolve it statically and the cache step can reference it.
+    # On all GitHub-hosted Windows runners the pub cache lives here.
+    env:
+      PUB_CACHE: C:\Users\runneradmin\AppData\Local\Pub\Cache
+
     steps:
       # -------------------------------------------------------------
       # 1. CHECK OUT SOURCE CODE
@@ -53,9 +59,7 @@ jobs:
       - name: Cache pub packages
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.pub-cache
-            ${{ github.workspace }}/.dart_tool
+          path: ${{ env.PUB_CACHE }}
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
