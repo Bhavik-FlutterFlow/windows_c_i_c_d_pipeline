@@ -129,7 +129,7 @@ jobs:
           --display-name "Windows CI CD Pipeline"
           --publisher-display-name "Your Company Name"
           --identity-name "com.yourcompany.windowscicdpipeline"
-          --msix-version "1.0.0.1"
+          --version "1.0.0.1"
           --capabilities "internetClient"
 
       # -------------------------------------------------------------
