@@ -1,0 +1,147 @@
+# ============================================================
+# GitHub Actions Workflow: Build & Package Flutter Windows App
+# Produces an MSIX installer and uploads it as a workflow artifact.
+# ============================================================
+
+name: Windows MSIX Build
+
+# -----------------------------------------------------------------
+# TRIGGERS
+#   • push to main  — fires on every merge / direct push
+#   • workflow_dispatch — lets you kick off a build from the UI
+#     with an optional version override input
+# -----------------------------------------------------------------
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_version:
+        description: "Override build version (e.g. 1.2.3+4). Leave empty to use pubspec.yaml value."
+        required: false
+        default: ""
+
+# Only one build per branch at a time; cancel stale runs on new push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-msix:
+    # ---------------------------------------------------------------
+    # RUNNER — must be Windows to build a Windows desktop app
+    # ---------------------------------------------------------------
+    runs-on: windows-latest
+
+    steps:
+      # -------------------------------------------------------------
+      # 1. CHECK OUT SOURCE CODE
+      #    Full history (fetch-depth: 0) is useful for version tagging;
+      #    use fetch-depth: 1 if you want a faster shallow clone.
+      # -------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -------------------------------------------------------------
+      # 2. CACHE PUB PACKAGES
+      #    Restores ~/.pub-cache between runs so `flutter pub get`
+      #    only downloads packages that changed.
+      # -------------------------------------------------------------
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ${{ github.workspace }}/.dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      # -------------------------------------------------------------
+      # 3. SET UP FLUTTER
+      #    Pin a specific stable channel version for reproducible
+      #    builds. Update 'flutter-version' when you upgrade locally.
+      #    ⚠️  PROJECT-SPECIFIC: change the version to match your local
+      #        Flutter SDK (run `flutter --version` to check).
+      # -------------------------------------------------------------
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.5"   # ← update to your Flutter version
+          channel: stable
+          cache: true
+
+      # -------------------------------------------------------------
+      # 4. VERIFY FLUTTER INSTALL
+      #    Prints SDK info to the log — useful for debugging CI failures.
+      # -------------------------------------------------------------
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      # -------------------------------------------------------------
+      # 5. INSTALL DART / FLUTTER DEPENDENCIES
+      #    Equivalent to running `flutter pub get` locally.
+      # -------------------------------------------------------------
+      - name: Install dependencies
+        run: flutter pub get
+
+      # -------------------------------------------------------------
+      # 6. (OPTIONAL) OVERRIDE BUILD VERSION
+      #    When the workflow_dispatch input is provided, rewrite the
+      #    version line in pubspec.yaml before building.
+      #    Skip this step if you always want to use the pubspec version.
+      # -------------------------------------------------------------
+      - name: Override build version (optional)
+        if: ${{ github.event.inputs.build_version != '' }}
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.build_version }}"
+          (Get-Content pubspec.yaml) -replace '^version:.*', "version: $version" |
+            Set-Content pubspec.yaml
+          Write-Host "pubspec.yaml version set to: $version"
+
+      # -------------------------------------------------------------
+      # 7. BUILD THE WINDOWS APP (release mode)
+      #    Output lands in build/windows/x64/runner/Release/
+      # -------------------------------------------------------------
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      # -------------------------------------------------------------
+      # 8. CREATE MSIX PACKAGE
+      #    All MSIX config is passed as CLI flags here (no msix_config
+      #    block needed in pubspec.yaml — safe for FlutterFlow projects).
+      #    Output: build/windows/x64/runner/Release/<app_name>.msix
+      #
+      #    ⚠️  PROJECT-SPECIFIC: update the four values below:
+      #      --display-name          Human-readable app name in the installer UI
+      #      --publisher-display-name  Your name / company name
+      #      --identity-name         Reverse-DNS package ID (unique per app)
+      #      --msix-version          Four-part version; keep in sync with pubspec
+      #                              version field (1.0.0+1 → 1.0.0.1)
+      # -------------------------------------------------------------
+      - name: Create MSIX package
+        run: >
+          dart run msix:create
+          --display-name "Windows CI CD Pipeline"
+          --publisher-display-name "Your Company Name"
+          --identity-name "com.yourcompany.windowscicdpipeline"
+          --msix-version "1.0.0.1"
+          --capabilities "internetClient"
+
+      # -------------------------------------------------------------
+      # 9. UPLOAD MSIX AS WORKFLOW ARTIFACT
+      #    Uses a glob pattern to find the .msix file — no dynamic env
+      #    variable needed. Retained for 30 days. Download from the
+      #    "Actions" tab → select the run → "Artifacts" section.
+      # -------------------------------------------------------------
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msix-${{ github.run_number }}
+          path: build/windows/x64/runner/Release/*.msix
+          retention-days: 30
+          if-no-files-found: error
