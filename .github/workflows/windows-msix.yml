@@ -120,8 +120,11 @@ jobs:
       #      --display-name          Human-readable app name in the installer UI
       #      --publisher-display-name  Your name / company name
       #      --identity-name         Reverse-DNS package ID (unique per app)
-      #      --msix-version          Four-part version; keep in sync with pubspec
+      #      --version               Four-part version; keep in sync with pubspec
       #                              version field (1.0.0+1 → 1.0.0.1)
+      #
+      #    --install-certificate false  Skips the interactive "install certificate?"
+      #    prompt that crashes CI (no stdin available on the runner).
       # -------------------------------------------------------------
       - name: Create MSIX package
         run: >
@@ -131,6 +134,7 @@ jobs:
           --identity-name "com.yourcompany.windowscicdpipeline"
           --version "1.0.0.1"
           --capabilities "internetClient"
+          --install-certificate false
 
       # -------------------------------------------------------------
       # 9. UPLOAD MSIX AS WORKFLOW ARTIFACT
